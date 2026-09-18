@@ -1,18 +1,16 @@
 {
-  "name": "messenger-247-bot",
+  "name": "messenger-e2ee-bot",
   "version": "1.0.0",
-  "description": "24/7 Persistent Messenger Bot developed by Raj Mishra",
-  "main": "index.js",
+  "description": "Playwright Dashboard",
+  "main": "server.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node server.js"
   },
   "dependencies": {
-    "express": "latest",
-    "messagix-js": "latest",
-    "pino-pretty": "latest",
-    "ws": "latest"
+    "express": "^5.1.0",
+    "playwright": "1.63.0"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22"
   }
 }
