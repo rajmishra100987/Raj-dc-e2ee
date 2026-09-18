@@ -8,7 +8,7 @@
   },
   "dependencies": {
     "express": "^4.19.2",
-    "messagix-js": "^1.1.0",
+    "messagix-js": "latest",
     "ws": "^8.16.0"
   },
   "engines": {
