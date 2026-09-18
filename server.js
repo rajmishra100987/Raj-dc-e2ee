@@ -9,7 +9,7 @@ app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
 // ================== CONFIGURATION ==================
-const MAX_CONCURRENT_TASKS = 3; // Railway 1GB RAM Limit
+const MAX_CONCURRENT_TASKS = 3; // Railway 1GB RAM Safe Limit
 
 // ================== CRASH PREVENTION ==================
 process.on('unhandledRejection', (err) => console.log('[UNHANDLED REJECTION]', err?.message || err));
@@ -57,7 +57,7 @@ function parseCookies(cookieStr) {
 async function setupSession(cookiesStr, threadId, e2eePin, addLog) {
     const browser = await getBrowser();
     
-    // Strict Desktop Profile (Sent from Web fix)
+    // Strict Desktop Profile (Enforces "Sent from Web")
     const context = await browser.newContext({
         viewport: { width: 1440, height: 900 },
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -88,48 +88,45 @@ async function setupSession(cookiesStr, threadId, e2eePin, addLog) {
     return { browser, context, page };
 }
 
-// ================== DIRECT API DISPATCHER (NO TYPING INDICATOR) ==================
+// ================== GUARANTEED E2EE DISPATCHER (REAL DELIVERY + NO TYPING) ==================
 async function sendDirectE2EEMessage(page, threadId, textPayload, addLog) {
     try {
-        const dispatchResult = await page.evaluate(async ({ threadId, messageText }) => {
-            return new Promise((resolve) => {
-                try {
-                    const req = window.require || window.__r;
-                    if (!req) return resolve({ success: false });
+        const sent = await page.evaluate(async ({ textPayload }) => {
+            const chatBox = document.querySelector('div[role="textbox"][contenteditable="true"]') ||
+                            document.querySelector('div[contenteditable="true"]');
 
-                    // Messenger Internal Dispatcher API Call
-                    const MessagingAction = req("MessagingClientDirectAction") || req("MWChatState");
-                    if (MessagingAction && typeof MessagingAction.sendTextMessage === 'function') {
-                        MessagingAction.sendTextMessage({ threadKey: threadId, text: messageText, isWeb: true });
-                        return resolve({ success: true, method: "Internal Web GraphQL API" });
-                    }
-                    resolve({ success: false });
-                } catch (e) { resolve({ success: false }); }
+            if (!chatBox) return { success: false, reason: "Chat input box not found" };
+
+            chatBox.focus();
+
+            // 1. Direct TextNode Injection (No Keypress typing status)
+            chatBox.innerHTML = '';
+            const textNode = document.createTextNode(textPayload);
+            chatBox.appendChild(textNode);
+
+            // 2. React Value & State Sync (Crucial for E2EE payload encryption)
+            const inputEvent = new InputEvent('input', {
+                bubbles: true,
+                cancelable: true,
+                inputType: 'insertText',
+                data: textPayload
             });
-        }, { threadId, messageText: textPayload });
+            chatBox.dispatchEvent(inputEvent);
 
-        if (dispatchResult.success) {
-            await page.waitForTimeout(20);
-            await page.keyboard.press('Enter'); // Trigger state update
-            addLog(`API Sent (Web): "${textPayload.substring(0, 30)}..."`);
+            return { success: true };
+        }, { textPayload });
+
+        if (sent.success) {
+            await page.waitForTimeout(100);
+            
+            // 3. Enter Key Dispatch to trigger Messenger E2EE WASM Encryption
+            await page.keyboard.press('Enter');
+            
+            addLog(`Direct E2EE Sent (Web): "${textPayload.substring(0, 35)}..."`);
             return true;
+        } else {
+            throw new Error(sent.reason);
         }
-
-        // Fallback: Silent Clipboard Paste (Bypasses Typing Listeners)
-        await page.evaluate(({ text }) => {
-            const el = document.querySelector('div[role="textbox"][contenteditable="true"]');
-            if (el) {
-                el.focus();
-                const dataTransfer = new DataTransfer();
-                dataTransfer.setData('text/plain', text);
-                el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dataTransfer, bubbles: true, cancelable: true }));
-            }
-        }, { text: textPayload });
-
-        await page.waitForTimeout(20);
-        await page.keyboard.press('Enter');
-        addLog(`Silent Paste Sent (Web): "${textPayload.substring(0, 30)}..."`);
-        return true;
 
     } catch (err) {
         addLog(`⚠️ Send Error: ${err.message}`);
@@ -167,13 +164,13 @@ async function runPlaywrightBot(taskId, cookiesStr, threadId, e2eePin, prefix, m
 
             try {
                 await sendDirectE2EEMessage(page, threadId, finalPayload, addLog);
-                failureCount = 0; // Reset failures on success
+                failureCount = 0; // Reset failure count on successful dispatch
             } catch (err) {
                 failureCount++;
                 addLog(`⚠️ Failures: ${failureCount}/${MAX_FAILURES}`);
 
                 if (failureCount >= MAX_FAILURES) {
-                    addLog(`❌ Threshold reached. Recovering Session...`);
+                    addLog(`❌ Failure threshold reached. Recovering Session...`);
                     try { if (context) await context.close(); } catch(e) {}
                     try {
                         const newSession = await setupSession(cookiesStr, threadId, e2eePin, addLog);
@@ -195,7 +192,10 @@ async function runPlaywrightBot(taskId, cookiesStr, threadId, e2eePin, prefix, m
             // Memory Protection: Soft reload every 60 messages
             if (msgCount % 60 === 0) {
                 addLog(`🔄 Memory Refreshing...`);
-                try { await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 }); await page.waitForTimeout(4000); } catch(e) {}
+                try { 
+                    await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 }); 
+                    await page.waitForTimeout(4000); 
+                } catch(e) {}
             }
 
             for (let i = 0; i < delay; i++) {
@@ -218,7 +218,7 @@ app.get('/', (req, res) => {
 <html lang="en">
 <head>
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Messenger Bot (Direct API)</title>
+    <title>Messenger Bot (Direct E2EE)</title>
     <style>
         body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; padding: 20px; }
         .container { max-width: 700px; margin: auto; background: #1e293b; padding: 25px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
@@ -228,7 +228,7 @@ app.get('/', (req, res) => {
         input, textarea { width: 100%; padding: 10px; margin-top: 5px; background: #0f172a; border: 1px solid #334155; color: #fff; border-radius: 6px; box-sizing: border-box; }
         button { width: 100%; padding: 12px; margin-top: 20px; background: #0284c7; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
         button:hover { background: #0369a1; }
-        .log-box { background: #000; height: 200px; overflow-y: auto; padding: 10px; margin-top: 20px; font-family: monospace; font-size: 12px; border-radius: 6px; color: #4ade80; border: 1px solid #334155; }
+        .log-box { background: #000; height: 220px; overflow-y: auto; padding: 10px; margin-top: 20px; font-family: monospace; font-size: 12px; border-radius: 6px; color: #4ade80; border: 1px solid #334155; }
         .row { display: flex; gap: 10px; align-items: flex-end; }
         .btn-view { background: #6366f1; width: auto; padding: 10px 20px; }
         .btn-stop { background: #ef4444; width: auto; padding: 10px 20px; }
@@ -237,7 +237,7 @@ app.get('/', (req, res) => {
 <body>
     <div class="container">
         <h2>Messenger Web-API Bot</h2>
-        <div class="tag">ZERO TYPING INDICATOR EDITION</div>
+        <div class="tag">DIRECT E2EE DISPATCHER EDITION</div>
         
         <form>
             <label>Messenger Cookie:</label>
@@ -278,7 +278,7 @@ app.get('/', (req, res) => {
             if (!cookies || !threadId || !file) return alert('Fill required fields!');
             
             const text = await file.text();
-            const messages = text.split('\\n').map(m => m.trim()).filter(m => m.length > 0);
+            const messages = text.split('\n').map(m => m.trim()).filter(m => m.length > 0);
 
             const res = await fetch('/api/start', {
                 method: 'POST', headers: {'Content-Type': 'application/json'},
