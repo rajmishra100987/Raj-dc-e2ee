@@ -1,19 +1,16 @@
-FROM mcr.microsoft.com/playwright:v1.44.0-noble
+FROM mcr.microsoft.com/playwright:v1.63.0-noble
 
-# App directory create karein
 WORKDIR /app
 
-# Package files copy karein
 COPY package*.json ./
 
-# Dependencies install karein
-RUN npm install
+RUN npm install --omit=dev
 
-# Baaki source code copy karein
 COPY . .
 
-# Server port expose karein
+ENV NODE_ENV=production
+ENV NODE_OPTIONS=--max-old-space-size=750
+
 EXPOSE 8080
 
-# Application start command
-CMD ["node", "server.js"]
+CMD ["npm", "start"]
