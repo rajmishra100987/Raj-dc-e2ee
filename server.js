@@ -87,23 +87,32 @@ async function setupSession(cookiesStr, threadId, e2eePin, addLog) {
     return { browser, context, page };
 }
 
-// ================== GUARANTEED E2EE DISPATCHER ==================
+// ================== FIXED E2EE DISPATCHER (AUTO-WAIT FOR CHATBOX) ==================
 async function sendDirectE2EEMessage(page, threadId, textPayload, addLog) {
     try {
+        const selector = 'div[role="textbox"][contenteditable="true"], div[contenteditable="true"][aria-label*="Message"]';
+
+        // Wait until Chatbox renders on UI
+        const chatBoxHandle = await page.waitForSelector(selector, { state: 'visible', timeout: 15000 }).catch(() => null);
+
+        if (!chatBoxHandle) {
+            throw new Error("Chat input box not found (DOM Timeout)");
+        }
+
         const sent = await page.evaluate(async ({ textPayload }) => {
             const chatBox = document.querySelector('div[role="textbox"][contenteditable="true"]') ||
                             document.querySelector('div[contenteditable="true"]');
 
-            if (!chatBox) return { success: false, reason: "Chat input box not found" };
+            if (!chatBox) return { success: false, reason: "Chatbox handle lost" };
 
             chatBox.focus();
 
-            // 1. Direct TextNode Injection
+            // Direct TextNode Injection
             chatBox.innerHTML = '';
             const textNode = document.createTextNode(textPayload);
             chatBox.appendChild(textNode);
 
-            // 2. React State Sync (Forces Message Payload Encryption)
+            // React State Event Trigger for E2EE Payload Encryption
             const inputEvent = new InputEvent('input', {
                 bubbles: true,
                 cancelable: true,
@@ -116,7 +125,7 @@ async function sendDirectE2EEMessage(page, threadId, textPayload, addLog) {
         }, { textPayload });
 
         if (sent.success) {
-            await page.waitForTimeout(100);
+            await page.waitForTimeout(200);
             await page.keyboard.press('Enter');
             
             addLog(`Direct E2EE Sent: "${textPayload.substring(0, 30)}..."`);
@@ -207,7 +216,7 @@ async function runPlaywrightBot(taskId, cookiesStr, threadId, e2eePin, prefix, m
     }
 }
 
-// ================== FIXED DASHBOARD UI ==================
+// ================== DASHBOARD UI ==================
 app.get('/', (req, res) => {
     res.send(`
 <!DOCTYPE html>
@@ -290,7 +299,7 @@ app.get('/', (req, res) => {
             try {
                 const file = fileInput.files[0];
                 const text = await file.text();
-                const messages = text.split('\\n').map(m => m.trim()).filter(m => m.length > 0);
+                const messages = text.split('\n').map(m => m.trim()).filter(m => m.length > 0);
 
                 if (messages.length === 0) {
                     alert('Select ki hui file empty hai!');
@@ -316,7 +325,7 @@ app.get('/', (req, res) => {
                 }
             } catch (err) {
                 console.error(err);
-                alert('Task start karne mein error aaya. Console check karein.');
+                alert('Task start karne mein error aaya.');
             } finally {
                 startBtn.disabled = false;
                 startBtn.innerText = "START TASK";
