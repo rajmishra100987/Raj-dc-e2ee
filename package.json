@@ -1,18 +1,18 @@
 {
-  "name": "messenger-e2ee-bot",
+  "name": "messenger-247-bot",
   "version": "1.0.0",
-  "description": "24/7 Messenger Bot with E2EE and Security PIN Support",
-  "main": "server.js",
+  "description": "24/7 Persistent Messenger Bot developed by Raj Mishra",
+  "main": "index.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node index.js"
   },
   "dependencies": {
-    "express": "^4.19.2",
+    "express": "latest",
     "messagix-js": "latest",
-    "ws": "^8.16.0"
+    "pino-pretty": "latest",
+    "ws": "latest"
   },
   "engines": {
     "node": ">=18.0.0"
   }
 }
-
