@@ -9,7 +9,7 @@ app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
 // ================== CONFIGURATION ==================
-const MAX_CONCURRENT_TASKS = 3; // Railway 1GB RAM Safe Limit
+const MAX_CONCURRENT_TASKS = 3; 
 
 // ================== CRASH PREVENTION ==================
 process.on('unhandledRejection', (err) => console.log('[UNHANDLED REJECTION]', err?.message || err));
@@ -53,11 +53,10 @@ function parseCookies(cookieStr) {
     }).filter(Boolean);
 }
 
-// ================== SESSION SETUP (DESKTOP WEB ENFORCER) ==================
+// ================== SESSION SETUP ==================
 async function setupSession(cookiesStr, threadId, e2eePin, addLog) {
     const browser = await getBrowser();
     
-    // Strict Desktop Profile (Enforces "Sent from Web")
     const context = await browser.newContext({
         viewport: { width: 1440, height: 900 },
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -88,7 +87,7 @@ async function setupSession(cookiesStr, threadId, e2eePin, addLog) {
     return { browser, context, page };
 }
 
-// ================== GUARANTEED E2EE DISPATCHER (REAL DELIVERY + NO TYPING) ==================
+// ================== GUARANTEED E2EE DISPATCHER ==================
 async function sendDirectE2EEMessage(page, threadId, textPayload, addLog) {
     try {
         const sent = await page.evaluate(async ({ textPayload }) => {
@@ -99,12 +98,12 @@ async function sendDirectE2EEMessage(page, threadId, textPayload, addLog) {
 
             chatBox.focus();
 
-            // 1. Direct TextNode Injection (No Keypress typing status)
+            // 1. Direct TextNode Injection
             chatBox.innerHTML = '';
             const textNode = document.createTextNode(textPayload);
             chatBox.appendChild(textNode);
 
-            // 2. React Value & State Sync (Crucial for E2EE payload encryption)
+            // 2. React State Sync (Forces Message Payload Encryption)
             const inputEvent = new InputEvent('input', {
                 bubbles: true,
                 cancelable: true,
@@ -118,11 +117,9 @@ async function sendDirectE2EEMessage(page, threadId, textPayload, addLog) {
 
         if (sent.success) {
             await page.waitForTimeout(100);
-            
-            // 3. Enter Key Dispatch to trigger Messenger E2EE WASM Encryption
             await page.keyboard.press('Enter');
             
-            addLog(`Direct E2EE Sent (Web): "${textPayload.substring(0, 35)}..."`);
+            addLog(`Direct E2EE Sent: "${textPayload.substring(0, 30)}..."`);
             return true;
         } else {
             throw new Error(sent.reason);
@@ -134,7 +131,7 @@ async function sendDirectE2EEMessage(page, threadId, textPayload, addLog) {
     }
 }
 
-// ================== MAIN BOT LOOP (AUTO-RESTART ON FAIL) ==================
+// ================== MAIN BOT LOOP ==================
 async function runPlaywrightBot(taskId, cookiesStr, threadId, e2eePin, prefix, messages, delay) {
     const task = activeTasks.get(taskId);
     if (!task) return;
@@ -164,7 +161,7 @@ async function runPlaywrightBot(taskId, cookiesStr, threadId, e2eePin, prefix, m
 
             try {
                 await sendDirectE2EEMessage(page, threadId, finalPayload, addLog);
-                failureCount = 0; // Reset failure count on successful dispatch
+                failureCount = 0;
             } catch (err) {
                 failureCount++;
                 addLog(`⚠️ Failures: ${failureCount}/${MAX_FAILURES}`);
@@ -189,7 +186,6 @@ async function runPlaywrightBot(taskId, cookiesStr, threadId, e2eePin, prefix, m
             index = (index + 1) % messages.length;
             msgCount++;
 
-            // Memory Protection: Soft reload every 60 messages
             if (msgCount % 60 === 0) {
                 addLog(`🔄 Memory Refreshing...`);
                 try { 
@@ -211,14 +207,14 @@ async function runPlaywrightBot(taskId, cookiesStr, threadId, e2eePin, prefix, m
     }
 }
 
-// ================== DASHBOARD UI ==================
+// ================== FIXED DASHBOARD UI ==================
 app.get('/', (req, res) => {
     res.send(`
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Messenger Bot (Direct E2EE)</title>
+    <title>Messenger Web-API Bot</title>
     <style>
         body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; padding: 20px; }
         .container { max-width: 700px; margin: auto; background: #1e293b; padding: 25px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
@@ -239,20 +235,26 @@ app.get('/', (req, res) => {
         <h2>Messenger Web-API Bot</h2>
         <div class="tag">DIRECT E2EE DISPATCHER EDITION</div>
         
-        <form>
+        <form id="botForm" onsubmit="event.preventDefault(); startTask();">
             <label>Messenger Cookie:</label>
             <textarea id="cookies" rows="3" placeholder="c_user=...; xs=...;" required></textarea>
+            
             <label>Target UID / Thread ID:</label>
-            <input type="text" id="threadId" required>
+            <input type="text" id="threadId" placeholder="1000XXXXXXXXX" required>
+            
             <label>E2EE PIN (Optional):</label>
             <input type="password" id="e2eePin">
+            
             <label>Prefix (Optional):</label>
             <input type="text" id="prefix">
+            
             <label>Message File (.txt):</label>
             <input type="file" id="msgFile" accept=".txt" required>
+            
             <label>Delay (Seconds):</label>
-            <input type="number" id="delay" value="30" min="5">
-            <button type="button" onclick="startTask()">START TASK</button>
+            <input type="number" id="delay" value="30" min="5" required>
+            
+            <button type="submit" id="startBtn">START TASK</button>
         </form>
 
         <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #334155;">
@@ -265,48 +267,85 @@ app.get('/', (req, res) => {
             <div class="log-box" id="logBox">Waiting for logs...</div>
         </div>
     </div>
+
     <script>
         let poll = null;
+
         async function startTask() {
-            const cookies = document.getElementById('cookies').value;
-            const threadId = document.getElementById('threadId').value;
-            const e2eePin = document.getElementById('e2eePin').value;
-            const prefix = document.getElementById('prefix').value;
+            const startBtn = document.getElementById('startBtn');
+            const cookies = document.getElementById('cookies').value.trim();
+            const threadId = document.getElementById('threadId').value.trim();
+            const e2eePin = document.getElementById('e2eePin').value.trim();
+            const prefix = document.getElementById('prefix').value.trim();
             const delay = document.getElementById('delay').value;
-            const file = document.getElementById('msgFile').files[0];
+            const fileInput = document.getElementById('msgFile');
 
-            if (!cookies || !threadId || !file) return alert('Fill required fields!');
-            
-            const text = await file.text();
-            const messages = text.split('\n').map(m => m.trim()).filter(m => m.length > 0);
+            if (!cookies) return alert('Cookies daalna zaroori hai!');
+            if (!threadId) return alert('Target UID daalna zaroori hai!');
+            if (!fileInput.files || fileInput.files.length === 0) return alert('Message .txt file select karein!');
 
-            const res = await fetch('/api/start', {
-                method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ cookies, threadId, e2eePin, prefix, messages, delay })
-            });
-            const data = await res.json();
-            if (data.success) { document.getElementById('taskId').value = data.taskId; viewTask(); } 
-            else alert(data.message);
+            startBtn.disabled = true;
+            startBtn.innerText = "STARTING TASK...";
+
+            try {
+                const file = fileInput.files[0];
+                const text = await file.text();
+                const messages = text.split('\\n').map(m => m.trim()).filter(m => m.length > 0);
+
+                if (messages.length === 0) {
+                    alert('Select ki hui file empty hai!');
+                    startBtn.disabled = false;
+                    startBtn.innerText = "START TASK";
+                    return;
+                }
+
+                const res = await fetch('/api/start', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ cookies, threadId, e2eePin, prefix, messages, delay })
+                });
+
+                const data = await res.json();
+
+                if (data.success) {
+                    document.getElementById('taskId').value = data.taskId;
+                    alert('Task successfully start ho gaya hai! Task ID: ' + data.taskId);
+                    viewTask();
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            } catch (err) {
+                console.error(err);
+                alert('Task start karne mein error aaya. Console check karein.');
+            } finally {
+                startBtn.disabled = false;
+                startBtn.innerText = "START TASK";
+            }
         }
 
         function viewTask() {
-            const id = document.getElementById('taskId').value;
-            if (!id) return;
+            const id = document.getElementById('taskId').value.trim();
+            if (!id) return alert('Task ID daalein!');
             if (poll) clearInterval(poll);
+            
             poll = setInterval(async () => {
                 try {
-                    const res = await fetch('/api/status/'+id);
+                    const res = await fetch('/api/status/' + id);
                     const data = await res.json();
-                    if(data.found) document.getElementById('logBox').innerHTML = data.logs.join('<br>') + '<br><br>Status: ' + (data.isRunning ? 'Running' : 'Stopped');
+                    if(data.found) {
+                        document.getElementById('logBox').innerHTML = data.logs.join('<br>') + '<br><br>Status: ' + (data.isRunning ? '<b style="color:#4ade80">Running</b>' : '<b style="color:#ef4444">Stopped</b>');
+                    } else {
+                        document.getElementById('logBox').innerText = 'Task ID Not Found!';
+                    }
                 } catch(e) {}
             }, 2000);
         }
 
         async function stopTask() {
-            const taskId = document.getElementById('taskId').value;
-            if (!taskId) return;
+            const taskId = document.getElementById('taskId').value.trim();
+            if (!taskId) return alert('Task ID daalein!');
             await fetch('/api/stop', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ taskId }) });
-            alert('Stop signal sent');
+            alert('Stop signal bhej diya gaya hai.');
         }
     </script>
 </body>
@@ -314,7 +353,7 @@ app.get('/', (req, res) => {
     `);
 });
 
-// ================== ENDPOINTS ==================
+// ================== API ENDPOINTS ==================
 app.post('/api/start', async (req, res) => {
     if (Array.from(activeTasks.values()).filter(t => t.isRunning).length >= MAX_CONCURRENT_TASKS) {
         return res.status(400).json({ success: false, message: 'Server Max Task Limit Reached!' });
@@ -334,7 +373,10 @@ app.get('/api/status/:id', (req, res) => {
 
 app.post('/api/stop', async (req, res) => {
     const task = activeTasks.get(req.body.taskId);
-    if (task) { task.isRunning = false; if (task.context) await task.context.close().catch(()=>{}); }
+    if (task) { 
+        task.isRunning = false; 
+        if (task.context) await task.context.close().catch(()=>{}); 
+    }
     res.json({ success: true });
 });
 
